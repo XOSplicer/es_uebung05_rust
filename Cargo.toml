@@ -1,0 +1,6 @@
+[package]
+name = "data-transmission"
+version = "0.1.0"
+authors = ["Felix Stegmaier <stegmaier.felix@gmail.com>"]
+
+[dependencies]
