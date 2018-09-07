@@ -1,7 +1,7 @@
-use std::fmt;
 use std::mem;
+use super::BufferTooShortError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommandValueError(u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,13 +27,7 @@ impl Command {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
-pub struct BufferTooShortError {
-    expected: usize,
-    actual: usize
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Packet<'a> {
     pub sequence_number: u16,
     pub command: Command,
@@ -61,7 +55,6 @@ impl<'a> Packet<'a> {
             header_buf[1] = self.sequence_number.to_be();
             header_buf[2] = (self.command as u16).to_be();
             header_buf[3] = self.handle.to_be();
-
         }
         // copy over data
         buf[Self::HEADER_LEN..].copy_from_slice(self.data);
