@@ -1,20 +1,19 @@
-use std::mem;
-use std::slice;
 use std::fmt;
+use std::mem;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub struct CommandValueError(u16);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum Command {
-      Invalid           = 0,
-      GeneralErrorReply = 1,
-      Echo              = 2,
-      EchoReply         = 3,
-      Shutdown          = 4,
-      ShutdownReply     = 5,
-      Unsupported       = 6
+    Invalid = 0,
+    GeneralErrorReply = 1,
+    Echo = 2,
+    EchoReply = 3,
+    Shutdown = 4,
+    ShutdownReply = 5,
+    Unsupported = 6,
 }
 
 impl Command {
@@ -25,187 +24,55 @@ impl Command {
         } else {
             Err(CommandValueError(c))
         }
-
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
+pub struct BufferTooShortError {
+    expected: usize,
+    actual: usize
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ConstructPacketError {
-    WrongDataLength,
-    CommandValue(CommandValueError),
+pub struct Packet<'a> {
+    pub sequence_number: u16,
+    pub command: Command,
+    pub handle: u16,
+    pub data: &'a [u8],
 }
 
-impl From<CommandValueError> for ConstructPacketError {
-    fn from(error: CommandValueError) -> Self {
-        ConstructPacketError::CommandValue(error)
-    }
-}
-
-#[repr(C)]
-#[repr(packed)]
-pub struct Packet {
-    data_length: u16,
-    sequence_number: u16,
-    command: u16,
-    handle: u16,
-    data: [u8],
-}
-
-impl Packet {
-
-    pub const HEADER_SIZE: usize = 4 * mem::size_of::<u16>();
-
-    pub fn try_from_slice<'a>(buf: &'a [u8])
-        -> Result<&'a Self, ConstructPacketError>
-    {
-        unsafe {
-            let t =  mem::transmute::<&[u8], &Self>(buf);
-            Command::try_from(t.command)?;
-
-            if buf.len() >= Self::HEADER_SIZE + t.data_length() {
-                Ok(t)
-            } else {
-                Err(ConstructPacketError::WrongDataLength)
-            }
+impl<'a> Packet<'a> {
+    const HEADER_LEN: usize = 4 * mem::size_of::<u16>();
+    pub fn to_net_bytes_buf<'b>(&self, buf: &'b mut [u8]) -> Result<&'b mut [u8], BufferTooShortError> {
+        let total_len = Self::HEADER_LEN + self.data.len();
+        if buf.len() < total_len {
+            return Err(BufferTooShortError {
+                expected: total_len,
+                actual: buf.len(),
+            });
         }
-    }
+        let buf = &mut buf[..total_len];
+        // copy header over
+        {
+            let header_buf = unsafe {
+                mem::transmute::<_, &mut [u16]>(&mut buf[..Self::HEADER_LEN])
+            };
+            header_buf[0] = (self.data.len() as u16).to_be();
+            header_buf[1] = self.sequence_number.to_be();
+            header_buf[2] = (self.command as u16).to_be();
+            header_buf[3] = self.handle.to_be();
 
-    pub fn try_from_slice_mut<'a>(buf: &'a mut [u8])
-        -> Result<&'a mut Self, ConstructPacketError>
-    {
-        unsafe {
-            let t = mem::transmute::<&mut [u8], &mut Self>(buf);
-            Command::try_from(t.command)?;
-
-            if buf.len() >= Self::HEADER_SIZE + t.data_length() {
-                Ok(t)
-            } else {
-                Err(ConstructPacketError::WrongDataLength)
-            }
         }
-    }
-
-    pub fn try_copy_into_slice<'a>(
-        buf: &'a mut [u8],
-        sequence_number: u16,
-        command: Command,
-        handle: u16,
-        data: &[u8] )
-        ->  Result<&'a Self, ConstructPacketError>
-    {
-        Ok(Self::try_copy_into_slice_mut(
-            buf, sequence_number, command, handle, data
-        )?)
-    }
-
-    pub fn try_copy_into_slice_mut<'a>(
-        buf: &'a mut [u8],
-        sequence_number: u16,
-        command: Command,
-        handle: u16,
-        data: &[u8] )
-        ->  Result<&'a mut Self, ConstructPacketError>
-    {
-        if  buf.len() < Packet::HEADER_SIZE + data.len() {
-            return Err(ConstructPacketError::WrongDataLength);
-        }
-        // safe since bounds are checked
-        let t = unsafe { mem::transmute::<&mut [u8], &mut Self>(buf) };
-        t.data_length = data.len() as u16;
-        t.sequence_number = sequence_number;
-        t.command = command as u16;
-        t.handle = handle;
-        t.data_as_slice_mut().copy_from_slice(data);
-        Ok(t)
-    }
-
-    pub fn data_length(&self) -> usize {
-        self.data_length as usize
-    }
-
-    pub fn sequence_number(&self) -> u16 {
-        self.sequence_number
-    }
-
-    pub fn command(&self) -> Command {
-        Command::try_from(self.command).unwrap()
-    }
-
-    pub fn handle(&self) -> u16 {
-        self.handle
-    }
-
-    pub fn data_as_slice<'a>(&'a self) -> &'a [u8] {
-        unsafe {
-            slice::from_raw_parts(self.data.as_ptr(), self.data_length())
-        }
-    }
-
-    pub fn data_as_slice_mut<'a>(&'a mut self) -> &'a mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(self.data.as_mut_ptr(), self.data_length())
-        }
-    }
-
-    fn as_slice<'a>(&'a self) -> &'a [u8] {
-        unsafe {
-            let len = Self::HEADER_SIZE + self.data_length();
-            slice::from_raw_parts(mem::transmute(&self), len)
-        }
+        // copy over data
+        buf[Self::HEADER_LEN..].copy_from_slice(self.data);
+        Ok(buf)
     }
 }
-
-impl fmt::Debug for Packet {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("TLV")
-            .field("data_length", &self.data_length())
-            .field("sequence_number", &self.sequence_number())
-            .field("command", &self.command())
-            .field("handle", &self.handle())
-            .field("data", &self.data_as_slice())
-            .finish()
-    }
-}
-
-impl PartialEq for Packet {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_slice() == other.as_slice()
-    }
-}
-
-impl Eq for Packet {}
-
-pub struct NetPacket<'a>(&'a mut Packet);
-
-impl<'a> NetPacket<'a> {
-    pub fn new(p: &'a mut Packet) -> Self {
-        p.data_length = p.data_length.to_be();
-        p.sequence_number = p.sequence_number.to_be();
-        p.command = p.command.to_be();
-        p.handle = p.handle.to_be();
-        NetPacket(p)
-    }
-
-    pub fn as_slice<'b>(&'b self) -> &'b [u8] {
-        self.0.as_slice()
-    }
-}
-
-impl<'a> Drop for NetPacket<'a> {
-    fn drop(&mut self) {
-        self.0.data_length = u16::from_be(self.0.data_length);
-        self.0.sequence_number = u16::from_be(self.0.sequence_number);
-        self.0.command = u16::from_be(self.0.command);
-        self.0.handle = u16::from_be(self.0.handle);
-    }
-}
-
-
 
 #[cfg(test)]
 mod test {
-    use std;
     use super::*;
+    use std;
 
     #[test]
     fn command_is_sane() {
@@ -226,36 +93,29 @@ mod test {
     }
 
     #[test]
-    fn packet_from_slice_is_ok() {
-        let buf = &mut [0_u8; 16];
-        let len: usize = 4;
-        buf[0] = len as u8;
-        let p = Packet::try_from_slice(buf);
-        assert!(p.is_ok());
-        let p: &Packet = p.unwrap();
-        assert_eq!(p.data_length(), len);
-        assert_eq!(p.data_as_slice().len(), len);
+    fn to_bytes_fits() {
+        let p = Packet {
+            sequence_number: 1,
+            command: Command::Unsupported,
+            handle: 1,
+            data: &[]
+        };
+        let mut b = [0; 8];
+        let x = p.to_net_bytes_buf(&mut b);
+        assert!(x.is_ok());
     }
 
     #[test]
-    fn packet_from_slice_is_err() {
-        let buf = &mut [0_u8; 16];
-        let len: usize = 16;
-        buf[0] = len as u8;
-        let p = Packet::try_from_slice(buf);
-        assert!(p.is_err());
-    }
-
-    #[test]
-    fn packet_from_slice_is_eq_mut() {
-        let buf1 = &mut [0_u8; 16];
-        let buf2 = &mut [0_u8; 16];
-        let len: usize = 4;
-        buf1[0] = len as u8;
-        buf2.copy_from_slice(buf1);
-        let p1: &Packet = Packet::try_from_slice(buf1).unwrap();
-        let p2: &mut Packet = Packet::try_from_slice_mut(buf2).unwrap();
-        assert_eq!(p1, p2)
+    fn to_bytes_too_short() {
+        let p = Packet {
+            sequence_number: 1,
+            command: Command::Unsupported,
+            handle: 1,
+            data: &[]
+        };
+        let mut b = [0; 2];
+        let x = p.to_net_bytes_buf(&mut b);
+        assert!(x.is_err());
     }
 
 }
