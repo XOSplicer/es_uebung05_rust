@@ -118,4 +118,19 @@ mod test {
         assert!(x.is_err());
     }
 
+    #[test]
+    fn to_bytes_correct() {
+        let p = Packet {
+            sequence_number: 1,
+            command: Command::Unsupported,
+            handle: 2,
+            data: &[40, 41, 42, 43]
+        };
+        let mut b = [0; 16];
+        let x = p.to_net_bytes_buf(&mut b);
+        assert!(x.is_ok());
+        let x = x.unwrap();
+        assert_eq!(x, &[0, 4, 0, 1, 0, 6, 0, 2, 40, 41, 42, 43]);
+    }
+
 }
