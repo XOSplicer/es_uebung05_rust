@@ -2,7 +2,6 @@
 extern crate nom;
 
 mod packet;
-mod wrapper;
 mod fletcher_16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq,)]
