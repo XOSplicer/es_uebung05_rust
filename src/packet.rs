@@ -14,6 +14,20 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandValueError(pub u16);
+
+impl Command {
+    const MAX_COMMAND: u16 = Command::Unsupported as u16;
+    pub fn try_from(c: u16) -> Result<Self, CommandValueError> {
+        if c <= Self::MAX_COMMAND {
+            Ok(unsafe { mem::transmute(c) })
+        } else {
+            Err(CommandValueError(c))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SequenceNumber(pub u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +46,7 @@ pub struct Packet<'a> {
 
 
 impl<'a> Packet<'a> {
-    const HEADER_LEN: usize = 4 * mem::size_of::<u16>();
+    pub const HEADER_LEN: usize = 4 * mem::size_of::<u16>();
     pub fn total_len(&self) -> usize {
         Self::HEADER_LEN + self.data.len()
     }

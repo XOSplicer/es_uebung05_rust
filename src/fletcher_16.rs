@@ -1,4 +1,3 @@
-use std::mem;
 use cast::cast_slice_to_bytes;
 
 pub struct Fletcher16Hasher {

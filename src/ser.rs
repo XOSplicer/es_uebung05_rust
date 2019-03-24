@@ -33,7 +33,7 @@ impl<'a> Serialize for packet::Packet<'a> {
     }
 }
 
-impl<'a, 'b: 'a> Serialize for wrapper::Wrapper<'a, 'b> {
+impl<'a> Serialize for wrapper::Wrapper<'a> {
     fn write_net_bytes<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         write_net_bytes_u16(self.total_len() as u16, writer)?;
         write_net_bytes_u16(self.sequence_number.0 as u16, writer)?;
