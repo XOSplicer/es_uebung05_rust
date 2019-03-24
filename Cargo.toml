@@ -1,7 +1,8 @@
 [package]
-name = "data-transmission"
-version = "0.1.0"
+name = "es_05"
+version = "0.1.1"
 authors = ["Felix Stegmaier <stegmaier.felix@gmail.com>"]
 
 [dependencies]
-nom = "4.0.0"
+nom = "4.2.3"
+failure = "0.1.5"
